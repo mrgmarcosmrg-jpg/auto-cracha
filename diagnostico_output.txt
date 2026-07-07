@@ -1,0 +1,219 @@
+﻿================================================================================
+DIAGNOSTICO COMPLETO DO PROJETO
+================================================================================
+
+1. ESTRUTURA DE ARQUIVOS
+
+/home/deploy/auto_cracha/backend/app/models/tenant.py
+/home/deploy/auto_cracha/backend/app/models/consentimento_lgpd.py
+/home/deploy/auto_cracha/backend/app/models/__init__.py
+/home/deploy/auto_cracha/backend/app/models/colaborador.py
+/home/deploy/auto_cracha/backend/app/models/usuario.py
+/home/deploy/auto_cracha/backend/app/models/config_empresa.py
+/home/deploy/auto_cracha/backend/app/models/assinatura.py
+/home/deploy/auto_cracha/backend/app/models/filial.py
+/home/deploy/auto_cracha/backend/app/models/lote.py
+/home/deploy/auto_cracha/backend/app/schemas/config.py
+/home/deploy/auto_cracha/backend/app/schemas/meu_cracha.py
+/home/deploy/auto_cracha/backend/app/schemas/publico.py
+/home/deploy/auto_cracha/backend/app/schemas/auth.py
+/home/deploy/auto_cracha/backend/app/schemas/__init__.py
+/home/deploy/auto_cracha/backend/app/schemas/colaborador.py
+/home/deploy/auto_cracha/backend/app/schemas/pagamento.py
+/home/deploy/auto_cracha/backend/app/schemas/usuario.py
+/home/deploy/auto_cracha/backend/app/schemas/cracha.py
+/home/deploy/auto_cracha/backend/app/schemas/filial.py
+/home/deploy/auto_cracha/backend/app/schemas/lote.py
+
+
+2. MODELO Usuario (models/usuario.py)
+
+import enum
+import uuid
+from datetime import datetime
+from typing import Optional
+
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, String
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.sql import func
+
+from app.core.db import Base
+
+
+class PerfilUsuario(str, enum.Enum):
+    SUPER_ADMIN = "SUPER_ADMIN"
+    ADMIN_TENANT = "ADMIN_TENANT"
+    GESTOR_FILIAL = "GESTOR_FILIAL"
+    VISUALIZADOR = "VISUALIZADOR"
+
+
+class Usuario(Base):
+    __tablename__ = "usuarios"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True
+    )
+    filial_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("filiais.id", ondelete="SET NULL"), nullable=True
+    )
+    nome: Mapped[str] = mapped_column(String, nullable=False)
+    email: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    senha_hash: Mapped[str] = mapped_column(String, nullable=False)
+    perfil: Mapped[PerfilUsuario] = mapped_column(Enum(PerfilUsuario, name="perfil_usuario"), nullable=False)
+    ativo: Mapped[bool] = mapped_column(Boolean, default=True)
+    convite_token: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    convite_expira_em: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    reset_token: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    reset_token_expira_em: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    criado_em: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    atualizado_em: Mapped[Optional[datetime]] = mapped_column(DateTime, onupdate=func.now())
+
+
+3. ESTRUTURA DA TABELA usuarios NO BANCO
+
+                            Table "public.usuarios"
+   Column   |          Type          | Collation | Nullable |      Default      
+------------+------------------------+-----------+----------+-------------------
+ id         | uuid                   |           | not null | gen_random_uuid()
+ email      | character varying(255) |           | not null | 
+ nome       | character varying(255) |           |          | 
+ senha_hash | character varying(255) |           |          | 
+ papel      | character varying(50)  |           |          | 
+ ativo      | boolean                |           |          | true
+Indexes:
+    "usuarios_pkey" PRIMARY KEY, btree (id)
+    "usuarios_email_key" UNIQUE CONSTRAINT, btree (email)
+
+
+
+4. MIGRATIONS (alembic/versions/)
+
+total 40
+drwxr-xr-x 2 root root  4096 Jun 22 14:43 .
+drwxr-xr-x 3 root root  4096 Jun 22 14:43 ..
+-rw-r--r-- 1 root root 15181 Jun 21 17:13 0001_initial_schema.py
+-rw-r--r-- 1 root root   750 Jun 21 17:37 0002_reset_token_usuarios.py
+-rw-r--r-- 1 root root   580 Jun 21 19:43 0003_logo_grupo_tenant.py
+-rw-r--r-- 1 root root   641 Jun 21 21:44 0004_criado_em_consentimento.py
+-rw-r--r-- 1 root root  1303 Jun 21 23:32 0005_assinatura_pagamento.py
+
+
+5. CONTEUDO DA PRIMEIRA MIGRATION
+
+"""schema inicial - todos os models da Etapa 1
+
+Revision ID: 0001
+Revises:
+Create Date: 2026-06-21
+
+"""
+from typing import Sequence, Union
+
+import sqlalchemy as sa
+from alembic import op
+from sqlalchemy.dialects import postgresql
+
+# revision identifiers, used by Alembic.
+revision: str = "0001"
+down_revision: Union[str, None] = None
+branch_labels: Union[str, Sequence[str], None] = None
+depends_on: Union[str, Sequence[str], None] = None
+
+
+def upgrade() -> None:
+    op.create_table(
+        "tenants",
+        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
+        sa.Column("nome_empresa", sa.String(), nullable=False),
+        sa.Column("cnpj", sa.String(), nullable=False, unique=True),
+        sa.Column("email_admin", sa.String(), nullable=False, unique=True),
+        sa.Column("logo_url", sa.String(), nullable=True),
+        sa.Column("cor_primaria", sa.String(), server_default="#0F172A"),
+        sa.Column("cor_secundaria", sa.String(), server_default="#FFFFFF"),
+        sa.Column("usar_faixa_treinamento", sa.Boolean(), server_default=sa.false()),
+        sa.Column("usar_faixa_pcd", sa.Boolean(), server_default=sa.false()),
+        sa.Column("faixas_customizadas", sa.JSON(), nullable=True),
+        sa.Column(
+            "status",
+            sa.Enum("TRIAL", "ATIVO", "SUSPENSO", "CANCELADO", name="status_tenant"),
+            nullable=False,
+            server_default="TRIAL",
+        ),
+        sa.Column("trial_expira_em", sa.DateTime(), nullable=False),
+        sa.Column("criado_em", sa.DateTime(), server_default=sa.func.now()),
+        sa.Column("atualizado_em", sa.DateTime(), nullable=True),
+    )
+
+    op.create_table(
+        "filiais",
+        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
+        sa.Column("tenant_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False),
+        sa.Column("nome", sa.String(), nullable=False),
+        sa.Column("cnpj", sa.String(), nullable=True),
+        sa.Column("endereco", sa.String(), nullable=True),
+        sa.Column("logo_filial_url", sa.String(), nullable=True),
+        sa.Column("logo_grupo_url", sa.String(), nullable=True),
+        sa.Column("ativo", sa.Boolean(), server_default=sa.true()),
+    )
+
+    op.create_table(
+        "usuarios",
+        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
+        sa.Column("tenant_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True),
+        sa.Column("filial_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("filiais.id", ondelete="SET NULL"), nullable=True),
+        sa.Column("nome", sa.String(), nullable=False),
+        sa.Column("email", sa.String(), nullable=False, unique=True),
+        sa.Column("senha_hash", sa.String(), nullable=False),
+        sa.Column(
+            "perfil",
+            sa.Enum("SUPER_ADMIN", "ADMIN_TENANT", "GESTOR_FILIAL", "VISUALIZADOR", name="perfil_usuario"),
+            nullable=False,
+        ),
+        sa.Column("ativo", sa.Boolean(), server_default=sa.true()),
+        sa.Column("convite_token", sa.String(), nullable=True),
+        sa.Column("convite_expira_em", sa.DateTime(), nullable=True),
+        sa.Column("criado_em", sa.DateTime(), server_default=sa.func.now()),
+        sa.Column("atualizado_em", sa.DateTime(), nullable=True),
+    )
+
+    op.create_table(
+        "colaboradores",
+        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
+        sa.Column("tenant_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False),
+        sa.Column("filial_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("filiais.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "status",
+            sa.Enum("PENDENTE_LGPD", "ATIVO", "DESLIGADO", "VISITANTE", name="status_colaborador"),
+            nullable=False,
+            server_default="PENDENTE_LGPD",
+        ),
+        sa.Column("qr_token", postgresql.UUID(as_uuid=True), nullable=False, unique=True),
+        sa.Column("nome", sa.String(), nullable=False),
+        sa.Column("cargo", sa.String(), nullable=False),
+        sa.Column("cpf", sa.String(), nullable=True),
+        sa.Column("cpf_hash", sa.String(), nullable=True),
+        sa.Column("celular", sa.String(), nullable=True),
+        sa.Column("email_colaborador", sa.String(), nullable=True),
+        sa.Column("em_treinamento", sa.Boolean(), server_default=sa.false()),
+        sa.Column("pcd", sa.Boolean(), server_default=sa.false()),
+        sa.Column("pcd_descricao", sa.String(), nullable=True),
+        sa.Column("campos_adicionais", sa.JSON(), nullable=True),
+        sa.Column("foto_url", sa.String(), nullable=True),
+        sa.Column("data_nascimento", sa.Date(), nullable=True),
+
+
+6. STATUS DOS CONTAINERS
+
+NAMES               STATUS
+crachapp_backend    Up 10 minutes (healthy)
+crachapp_redis      Up About an hour (healthy)
+crachapp_frontend   Up About an hour
+crachapp_postgres   Up About an hour (healthy)
+elastic_dirac       Exited (1) 2 days ago
+
+
+================================================================================
+FIM DO DIAGNOSTICO
+================================================================================
