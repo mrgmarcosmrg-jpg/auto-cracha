@@ -1,129 +1,85 @@
-from io import BytesIO
-from typing import List, Tuple
-
+﻿from io import BytesIO
 from PIL import Image
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
-from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas
 
-CARTAO_LARGURA_MM = 85.6
-CARTAO_ALTURA_MM = 54.0
-MARGEM_MM = 10.0
-ESPACAMENTO_MM = 4.0
-LARGURA_PAGINA_MM = 210.0
-ALTURA_PAGINA_MM = 297.0
+
+def compilar_pdf_empresa(imagens_crachá: list[Image.Image]) -> BytesIO:
+    """
+    Compila múltiplas imagens de crachás em layout A4 (3x3 = 9 crachás por página).
+    Formato CR80: 85.6mm x 53.98mm
+    """
+    pdf_buffer = BytesIO()
+    
+    # Dimensões CR80 em pontos (1 inch = 72 pontos, 1 inch = 25.4mm)
+    largura_cracha_mm = 85.6
+    altura_cracha_mm = 53.98
+    largura_cracha_pt = largura_cracha_mm * 72 / 25.4
+    altura_cracha_pt = altura_cracha_mm * 72 / 25.4
+    
+    # Margens e espaçamento
+    margem = 10 * mm
+    espacamento = 5 * mm
+    
+    # Layout 3x3
+    colunas = 3
+    linhas = 3
+    crachás_por_pagina = colunas * linhas
+    
+    # Criar PDF
+    c = canvas.Canvas(pdf_buffer, pagesize=A4)
+    largura_a4, altura_a4 = A4
+    
+    # Processar imagens em grupos de 9
+    for idx_grupo, i in enumerate(range(0, len(imagens_crachá), crachás_por_pagina)):
+        if idx_grupo > 0:
+            c.showPage()
+        
+        grupo = imagens_crachá[i:i + crachás_por_pagina]
+        
+        for pos, img_pillow in enumerate(grupo):
+            col = pos % colunas
+            row = pos // colunas
+            
+            x = margem + col * (largura_cracha_pt + espacamento)
+            y = altura_a4 - margem - (row + 1) * altura_cracha_pt - row * espacamento
+            
+            # Salvar imagem temporária
+            img_bytes = BytesIO()
+            img_pillow.save(img_bytes, format='PNG')
+            img_bytes.seek(0)
+            
+            # Desenhar no PDF
+            c.drawImage(img_bytes, x, y, width=largura_cracha_pt, height=altura_cracha_pt)
+    
+    c.save()
+    pdf_buffer.seek(0)
+    return pdf_buffer
 
 
-def _dimensoes_cartao_mm_por_proporcao(largura_px: int, altura_px: int) -> Tuple[float, float]:
-    """CR80: 85.6x54mm. Crachás 'paisagem' (largura>=altura) usam a orientação
-    landscape; crachás 'retrato' usam a orientação portrait do mesmo cartão."""
-    if largura_px >= altura_px:
-        return CARTAO_LARGURA_MM, CARTAO_ALTURA_MM
-    return CARTAO_ALTURA_MM, CARTAO_LARGURA_MM
-
-
-def _dimensoes_cartao_mm(imagem: Image.Image) -> Tuple[float, float]:
-    return _dimensoes_cartao_mm_por_proporcao(imagem.width, imagem.height)
-
-
-def _grade_3x3_por_proporcao(largura_px: int, altura_px: int) -> Tuple[int, int]:
-    """Quantas colunas/linhas de um dado cartão cabem numa página A4 com as margens padrão."""
-    cartao_largura_mm, cartao_altura_mm = _dimensoes_cartao_mm_por_proporcao(largura_px, altura_px)
-    colunas = max(1, int((LARGURA_PAGINA_MM - 2 * MARGEM_MM + ESPACAMENTO_MM) // (cartao_largura_mm + ESPACAMENTO_MM)))
-    linhas = max(1, int((ALTURA_PAGINA_MM - 2 * MARGEM_MM + ESPACAMENTO_MM) // (cartao_altura_mm + ESPACAMENTO_MM)))
-    return colunas, linhas
-
-
-def _grade_3x3(imagem: Image.Image) -> Tuple[int, int]:
-    return _grade_3x3_por_proporcao(imagem.width, imagem.height)
-
-
-def cartoes_por_pagina_3x3(imagem: Image.Image) -> int:
-    colunas, linhas = _grade_3x3(imagem)
-    return colunas * linhas
-
-
-def cartoes_por_pagina_3x3_por_template(template_id: str) -> int:
-    """Calcula quantos cartões cabem por página sem precisar renderizar nenhuma imagem
-    (usa só as dimensões de canvas declaradas pelo módulo do template)."""
-    from app.cracha.templates import horizontal_padrao, vertical_padrao
-
-    modulo = {"vertical_padrao": vertical_padrao, "horizontal_padrao": horizontal_padrao}.get(
-        template_id, vertical_padrao
-    )
-    colunas, linhas = _grade_3x3_por_proporcao(modulo.LARGURA, modulo.ALTURA)
-    return colunas * linhas
-
-
-def gerar_pdf_a4_3x3(imagens: List[Image.Image]) -> bytes:
-    """Monta um PDF A4 com os crachás em grade, preenchendo o máximo de colunas/linhas
-    que couberem na página (3x3 para o cartão retrato padrão, a 300 DPI)."""
-    buffer = BytesIO()
-    pagina = canvas.Canvas(buffer, pagesize=A4)
-
-    if not imagens:
-        pagina.showPage()
-        pagina.save()
-        return buffer.getvalue()
-
-    cartao_largura_mm, cartao_altura_mm = _dimensoes_cartao_mm(imagens[0])
-    colunas, linhas = _grade_3x3(imagens[0])
-    por_pagina = colunas * linhas
-
-    _, altura_pagina_pt = A4
-
-    for indice, imagem in enumerate(imagens):
-        posicao_na_pagina = indice % por_pagina
-        if posicao_na_pagina == 0 and indice > 0:
-            pagina.showPage()
-
-        coluna = posicao_na_pagina % colunas
-        linha = posicao_na_pagina // colunas
-
-        x = (MARGEM_MM + coluna * (cartao_largura_mm + ESPACAMENTO_MM)) * mm
-        y_topo_mm = MARGEM_MM + linha * (cartao_altura_mm + ESPACAMENTO_MM)
-        y = altura_pagina_pt - (y_topo_mm + cartao_altura_mm) * mm
-
-        pagina.drawImage(
-            ImageReader(imagem),
-            x,
-            y,
-            width=cartao_largura_mm * mm,
-            height=cartao_altura_mm * mm,
-        )
-
-    pagina.showPage()
-    pagina.save()
-    return buffer.getvalue()
-
-
-def gerar_pdf_a4_unitario(imagens: List[Image.Image]) -> bytes:
-    """Um crachá centralizado por página (uma página para cada imagem da lista)."""
-    buffer = BytesIO()
-    pagina = canvas.Canvas(buffer, pagesize=A4)
-
-    if not imagens:
-        pagina.showPage()
-        pagina.save()
-        return buffer.getvalue()
-
-    for indice, imagem in enumerate(imagens):
-        if indice > 0:
-            pagina.showPage()
-
-        cartao_largura_mm, cartao_altura_mm = _dimensoes_cartao_mm(imagem)
-        x = (LARGURA_PAGINA_MM - cartao_largura_mm) / 2 * mm
-        y = (ALTURA_PAGINA_MM - cartao_altura_mm) / 2 * mm
-
-        pagina.drawImage(
-            ImageReader(imagem),
-            x,
-            y,
-            width=cartao_largura_mm * mm,
-            height=cartao_altura_mm * mm,
-        )
-
-    pagina.showPage()
-    pagina.save()
-    return buffer.getvalue()
+def compilar_pdf_unitario(imagem_cracha: Image.Image) -> BytesIO:
+    """Compila uma única imagem de crachá em página A4 centralizada."""
+    pdf_buffer = BytesIO()
+    
+    largura_cracha_mm = 85.6
+    altura_cracha_mm = 53.98
+    largura_cracha_pt = largura_cracha_mm * 72 / 25.4
+    altura_cracha_pt = altura_cracha_mm * 72 / 25.4
+    
+    c = canvas.Canvas(pdf_buffer, pagesize=A4)
+    largura_a4, altura_a4 = A4
+    
+    # Centralizar
+    x = (largura_a4 - largura_cracha_pt) / 2
+    y = (altura_a4 - altura_cracha_pt) / 2
+    
+    img_bytes = BytesIO()
+    imagem_cracha.save(img_bytes, format='PNG')
+    img_bytes.seek(0)
+    
+    c.drawImage(img_bytes, x, y, width=largura_cracha_pt, height=altura_cracha_pt)
+    c.save()
+    
+    pdf_buffer.seek(0)
+    return pdf_buffer

@@ -1,71 +1,145 @@
-from PIL import Image, ImageDraw
-
-from app.cracha.utils.cores import escurecer, gradiente_vertical
-from app.cracha.utils.faixas import desenhar_zona_faixas
-from app.cracha.utils.fontes import ajustar_fonte_para_largura, carregar_fonte, escrever_centralizado
-from app.cracha.utils.foto import baixar_imagem, criar_circulo, processar_foto
-from app.cracha.utils.qr import gerar_qr
-
-LARGURA = 500
-ALTURA = 800
+﻿from PIL import Image, ImageDraw, ImageFont
+from typing import Optional
+import textwrap
 
 
-def renderizar(dados: dict) -> Image.Image:
-    canvas = Image.new("RGB", (LARGURA, ALTURA), "white")
-    draw = ImageDraw.Draw(canvas)
-
-    cor_primaria = dados.get("cor_primaria") or "#0F172A"
-    nome_empresa = (dados.get("nome_empresa") or "").strip()
-
-    _desenhar_cabecalho(canvas, draw, dados, cor_primaria, nome_empresa)
-    _desenhar_foto(canvas, dados)
-    _desenhar_nome_e_cargo(draw, dados)
-    _desenhar_qrcode(canvas, dados)
-    desenhar_zona_faixas(draw, dados, x_inicio=0, largura=LARGURA, y_inicio=635, altura_total=90)
-
-    return canvas
-
-
-def _desenhar_cabecalho(canvas: Image.Image, draw: ImageDraw.ImageDraw, dados: dict, cor_primaria: str, nome_empresa: str) -> None:
-    gradiente = gradiente_vertical(LARGURA, 210, cor_primaria, escurecer(cor_primaria, 0.15))
-    canvas.paste(gradiente, (0, 0))
-
-    logo = baixar_imagem(dados.get("logo_url"))
-    if logo:
-        logo = _ajustar_logo(logo, max_largura=312, max_altura=90)
-        x = (LARGURA - logo.width) // 2
-        canvas.paste(logo, (x, 20), logo)
-    else:
-        escrever_centralizado(draw, nome_empresa, 0, LARGURA, y=55, fonte=carregar_fonte(28), cor="white")
-
-    fonte_nome_empresa = ajustar_fonte_para_largura(draw, nome_empresa.upper(), 480, 31, 14)
-    escrever_centralizado(draw, nome_empresa.upper(), 0, LARGURA, y=115, fonte=fonte_nome_empresa, cor="white")
-
-
-def _ajustar_logo(logo: Image.Image, max_largura: int, max_altura: int) -> Image.Image:
-    logo = logo.convert("RGBA")
-    proporcao = min(max_largura / logo.width, max_altura / logo.height, 1)
-    novo_tamanho = (max(1, int(logo.width * proporcao)), max(1, int(logo.height * proporcao)))
-    return logo.resize(novo_tamanho, Image.LANCZOS)
-
-
-def _desenhar_foto(canvas: Image.Image, dados: dict) -> None:
-    foto = processar_foto(dados.get("foto_url"), tamanho=250)
-    foto_circular = criar_circulo(foto, tamanho=250, borda_px=6)
-    x = (LARGURA - foto_circular.width) // 2
-    canvas.paste(foto_circular, (x, 148), foto_circular)
-
-
-def _desenhar_nome_e_cargo(draw: ImageDraw.ImageDraw, dados: dict) -> None:
-    nome = (dados.get("nome") or "").upper()
-    fonte_nome = ajustar_fonte_para_largura(draw, nome, 480, 42, 18)
-    escrever_centralizado(draw, nome, 0, LARGURA, y=400, fonte=fonte_nome, cor="#0F172A")
-
-    cargo = (dados.get("cargo") or "COLABORADOR").upper()
-    escrever_centralizado(draw, cargo, 0, LARGURA, y=440, fonte=carregar_fonte(28), cor="#0F172A")
-
-
-def _desenhar_qrcode(canvas: Image.Image, dados: dict) -> None:
-    qr = gerar_qr(str(dados.get("qr_token")), tamanho=160)
-    x = (LARGURA - qr.width) // 2
-    canvas.paste(qr, (x, 468))
+class VerticalPadrao:
+    """Template vertical padrão para crachás (500x800px)."""
+    
+    CANVAS_WIDTH = 500
+    CANVAS_HEIGHT = 800
+    
+    # Coordenadas em pixels (briefing)
+    LOGO_Y = 30
+    COMPANY_NAME_Y = 100
+    FOTO_Y = 170
+    INFO_Y = 480
+    FAIXAS_Y_MIN = 635
+    FAIXAS_Y_MAX = 725
+    QR_Y = 750
+    
+    def __init__(self, config_empresa: dict, colaborador: dict):
+        self.config = config_empresa
+        self.colaborador = colaborador
+    
+    def renderizar(self, foto_circular: Optional[Image.Image], qr_code: Image.Image) -> Image.Image:
+        """Renderiza o crachá completo."""
+        # Criar canvas branco
+        canvas = Image.new('RGB', (self.CANVAS_WIDTH, self.CANVAS_HEIGHT), 'white')
+        draw = ImageDraw.Draw(canvas)
+        
+        # 1. Logo empresa (centralizada, 100x80px)
+        if self.config.get('logo_url'):
+            try:
+                import urllib.request
+                from io import BytesIO
+                with urllib.request.urlopen(self.config['logo_url']) as response:
+                    logo = Image.open(BytesIO(response.read()))
+                    logo.thumbnail((100, 80), Image.Resampling.LANCZOS)
+                    logo_x = (self.CANVAS_WIDTH - logo.width) // 2
+                    canvas.paste(logo, (logo_x, self.LOGO_Y))
+            except:
+                pass
+        
+        # 2. Nome da empresa (Arial Bold, centralizado, Y=100)
+        try:
+            fonte_empresa = ImageFont.truetype("arial.ttf", 18)
+            fonte_empresa_bold = ImageFont.truetype("arialbd.ttf", 18)
+        except:
+            fonte_empresa = ImageFont.load_default()
+            fonte_empresa_bold = ImageFont.load_default()
+        
+        empresa_nome = self.config.get('nome_empresa', 'EMPRESA')
+        bbox = draw.textbbox((0, 0), empresa_nome, font=fonte_empresa_bold)
+        empresa_width = bbox[2] - bbox[0]
+        empresa_x = (self.CANVAS_WIDTH - empresa_width) // 2
+        draw.text((empresa_x, self.COMPANY_NAME_Y), empresa_nome, fill='black', font=fonte_empresa_bold)
+        
+        # 3. Foto circular (250x250px, centralizada)
+        if foto_circular:
+            foto_x = (self.CANVAS_WIDTH - 250) // 2
+            canvas.paste(foto_circular, (foto_x, self.FOTO_Y), foto_circular)
+        
+        # 4. Nome do funcionário e cargo (caixa alta, centralizado, Y=480)
+        try:
+            fonte_nome = ImageFont.truetype("arialbd.ttf", 20)
+            fonte_cargo = ImageFont.truetype("arial.ttf", 14)
+        except:
+            fonte_nome = ImageFont.load_default()
+            fonte_cargo = ImageFont.load_default()
+        
+        nome = self.colaborador.get('nome', '').upper()
+        cargo = self.colaborador.get('cargo', '').upper()
+        
+        bbox_nome = draw.textbbox((0, 0), nome, font=fonte_nome)
+        nome_width = bbox_nome[2] - bbox_nome[0]
+        nome_x = (self.CANVAS_WIDTH - nome_width) // 2
+        draw.text((nome_x, self.INFO_Y), nome, fill='black', font=fonte_nome)
+        
+        bbox_cargo = draw.textbbox((0, 0), cargo, font=fonte_cargo)
+        cargo_width = bbox_cargo[2] - bbox_cargo[0]
+        cargo_x = (self.CANVAS_WIDTH - cargo_width) // 2
+        draw.text((cargo_x, self.INFO_Y + 35), cargo, fill='#666666', font=fonte_cargo)
+        
+        # 5. Faixas injetáveis (Y=635 a Y=725, altura=90px)
+        faixa_altura = self.FAIXAS_Y_MAX - self.FAIXAS_Y_MIN
+        faixa_largura_unitaria = self.CANVAS_WIDTH // 2
+        
+        # Faixa 1: Em Treinamento (Laranja, esquerda)
+        if self.colaborador.get('em_treinamento', False):
+            self._desenhar_faixa(draw, 
+                x=10, 
+                y=self.FAIXAS_Y_MIN, 
+                largura=faixa_largura_unitaria - 15, 
+                altura=faixa_altura - 10,
+                cor_bg=(255, 165, 0),  # Laranja
+                texto="EM TREINAMENTO",
+                fonte_size=14
+            )
+        
+        # Faixa 2: PCD (Azul, direita)
+        if self.colaborador.get('pcd', False):
+            self._desenhar_faixa(draw,
+                x=self.CANVAS_WIDTH // 2 + 5,
+                y=self.FAIXAS_Y_MIN,
+                largura=faixa_largura_unitaria - 15,
+                altura=faixa_altura - 10,
+                cor_bg=(0, 102, 204),  # Azul
+                texto="PCD",
+                fonte_size=14
+            )
+        
+        # 6. QR Code (centralizado, Y=750)
+        qr_resized = qr_code.resize((80, 80), Image.Resampling.LANCZOS)
+        qr_x = (self.CANVAS_WIDTH - 80) // 2
+        canvas.paste(qr_resized, (qr_x, self.QR_Y))
+        
+        return canvas
+    
+    def _desenhar_faixa(self, draw: ImageDraw.ImageDraw, x: int, y: int, 
+                       largura: int, altura: int, cor_bg: tuple, 
+                       texto: str, fonte_size: int = 14):
+        """Desenha faixa com cantos arredondados e texto."""
+        raio = 12
+        
+        # Desenhar fundo arredondado
+        draw.rounded_rectangle(
+            [x, y, x + largura, y + altura],
+            radius=raio,
+            fill=cor_bg
+        )
+        
+        # Desenhar texto
+        try:
+            fonte = ImageFont.truetype("arialbd.ttf", fonte_size)
+        except:
+            fonte = ImageFont.load_default()
+        
+        bbox = draw.textbbox((0, 0), texto, font=fonte)
+        texto_width = bbox[2] - bbox[0]
+        texto_height = bbox[3] - bbox[1]
+        
+        texto_x = x + (largura - texto_width) // 2
+        texto_y = y + (altura - texto_height) // 2
+        
+        draw.text((texto_x, texto_y), texto, fill='white', font=fonte)

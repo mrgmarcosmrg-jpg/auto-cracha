@@ -1,94 +1,85 @@
-import io
-import urllib.request
+﻿import io
 from typing import Optional
-
 import cv2
 import numpy as np
-from PIL import Image, ImageDraw, ImageOps
+from PIL import Image, ImageDraw
+
+FACE_CASCADE = cv2.CascadeClassifier(
+    cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
+)
 
 
-def baixar_imagem(url: Optional[str], timeout: int = 10) -> Optional[Image.Image]:
-    if not url:
-        return None
+def processar_foto(url_ou_bytes: str | bytes) -> Optional[Image.Image]:
+    """Processa foto com face detection e crop circular."""
     try:
-        with urllib.request.urlopen(url, timeout=timeout) as resposta:
-            conteudo = resposta.read()
-        with Image.open(io.BytesIO(conteudo)) as img:
-            img.load()
-            return ImageOps.exif_transpose(img).convert("RGB")
-    except Exception:
-        return None
+        if isinstance(url_ou_bytes, str):
+            import urllib.request
+            with urllib.request.urlopen(url_ou_bytes) as response:
+                image_data = response.read()
+        else:
+            image_data = url_ou_bytes
+
+        nparr = np.frombuffer(image_data, np.uint8)
+        img_cv2 = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+
+        if img_cv2 is None:
+            return _fallback_crop_central(image_data)
+
+        gray = cv2.cvtColor(img_cv2, cv2.COLOR_BGR2GRAY)
+        faces = FACE_CASCADE.detectMultiScale(gray, scaleFactor=1.3, minNeighbors=4, minSize=(100, 100))
+
+        if len(faces) > 0:
+            x, y, w, h = faces[0]
+            expansion = max(w, h) * 0.2
+            x = max(0, int(x - expansion))
+            y = max(0, int(y - expansion))
+            w = int(w + expansion * 2)
+            h = int(h + expansion * 2)
+            size = max(w, h)
+            x_center = x + w // 2
+            y_center = y + h // 2
+            x = max(0, x_center - size // 2)
+            y = max(0, y_center - size // 2)
+            cropped = img_cv2[y:y+size, x:x+size]
+        else:
+            return _fallback_crop_central(image_data)
+
+        img_pil = Image.fromarray(cv2.cvtColor(cropped, cv2.COLOR_BGR2RGB))
+        img_pil = img_pil.resize((250, 250), Image.Resampling.LANCZOS)
+
+        return _criar_circular_com_borda(img_pil)
+
+    except Exception as e:
+        print(f"Erro ao processar foto: {e}")
+        return _fallback_crop_central(url_ou_bytes) if isinstance(url_ou_bytes, bytes) else None
 
 
-def processar_foto(url: Optional[str], tamanho: int = 250) -> Image.Image:
-    """Baixa a foto, corrige EXIF, detecta rosto e recorta/redimensiona para um quadrado.
-
-    Sem foto ou erro no download: usa um placeholder com ícone de pessoa.
-    Foto sem rosto detectável: usa recorte central (fallback).
-    """
-    imagem = baixar_imagem(url)
-    if imagem is None:
-        return _placeholder(tamanho)
-
-    recorte = _recortar_rosto(imagem) or _recorte_central(imagem)
-    return recorte.resize((tamanho, tamanho), Image.LANCZOS)
-
-
-def _placeholder(tamanho: int) -> Image.Image:
-    img = Image.new("RGB", (tamanho, tamanho), "#CBD5E1")
-    draw = ImageDraw.Draw(img)
-    raio = tamanho // 3
-    centro = tamanho // 2
-    draw.ellipse([centro - raio // 2, centro - raio, centro + raio // 2, centro], fill="#94A3B8")
-    draw.ellipse([centro - raio, centro + raio // 3, centro + raio, centro + raio * 2], fill="#94A3B8")
-    return img
-
-
-def _recortar_rosto(img: Image.Image) -> Optional[Image.Image]:
+def _fallback_crop_central(image_data: bytes) -> Optional[Image.Image]:
+    """Fallback: crop central sem face detection."""
     try:
-        cinza = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2GRAY)
-        cascade_path = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
-        detector = cv2.CascadeClassifier(cascade_path)
-        rostos = detector.detectMultiScale(cinza, scaleFactor=1.1, minNeighbors=5, minSize=(40, 40))
-    except Exception:
+        img = Image.open(io.BytesIO(image_data))
+        img.thumbnail((300, 300), Image.Resampling.LANCZOS)
+        left = (img.width - 250) // 2
+        top = (img.height - 250) // 2
+        right = left + 250
+        bottom = top + 250
+        img_cropped = img.crop((left, top, right, bottom))
+        return _criar_circular_com_borda(img_cropped)
+    except Exception as e:
+        print(f"Erro no fallback: {e}")
         return None
 
-    if len(rostos) == 0:
-        return None
 
-    x, y, w, h = max(rostos, key=lambda r: r[2] * r[3])
-    cx, cy = x + w // 2, y + h // 2
+def _criar_circular_com_borda(img: Image.Image, tamanho: int = 250, borda_px: int = 6) -> Image.Image:
+    """Cria versão circular da imagem com borda branca."""
+    img = img.resize((tamanho, tamanho), Image.Resampling.LANCZOS)
+    tamanho_com_borda = tamanho + (borda_px * 2)
+    img_com_borda = Image.new('RGBA', (tamanho_com_borda, tamanho_com_borda), (255, 255, 255, 255))
+    img_com_borda.paste(img, (borda_px, borda_px))
 
-    largura, altura = img.size
-    lado = min(int(max(w, h) * 1.8), largura, altura)
-    metade = lado // 2
+    mask = Image.new('L', (tamanho_com_borda, tamanho_com_borda), 0)
+    draw = ImageDraw.Draw(mask)
+    draw.ellipse([0, 0, tamanho_com_borda - 1, tamanho_com_borda - 1], fill=255)
+    img_com_borda.putalpha(mask)
 
-    esquerda = max(0, min(cx - metade, largura - lado))
-    topo = max(0, min(cy - metade, altura - lado))
-    return img.crop((esquerda, topo, esquerda + lado, topo + lado))
-
-
-def _recorte_central(img: Image.Image) -> Image.Image:
-    largura, altura = img.size
-    lado = min(largura, altura)
-    esquerda = (largura - lado) // 2
-    topo = (altura - lado) // 2
-    return img.crop((esquerda, topo, esquerda + lado, topo + lado))
-
-
-def criar_circulo(img: Image.Image, tamanho: int, borda_px: int = 6) -> Image.Image:
-    """Aplica máscara circular com borda branca ao redor."""
-    img = img.resize((tamanho, tamanho), Image.LANCZOS).convert("RGB")
-
-    mascara = Image.new("L", (tamanho, tamanho), 0)
-    ImageDraw.Draw(mascara).ellipse((0, 0, tamanho, tamanho), fill=255)
-
-    tamanho_total = tamanho + borda_px * 2
-    resultado = Image.new("RGBA", (tamanho_total, tamanho_total), (0, 0, 0, 0))
-    ImageDraw.Draw(resultado).ellipse((0, 0, tamanho_total, tamanho_total), fill="white")
-
-    circulo = Image.new("RGBA", (tamanho, tamanho))
-    circulo.paste(img, (0, 0), mascara)
-    resultado.paste(circulo, (borda_px, borda_px), circulo)
-
-    return resultado
+    return img_com_borda
