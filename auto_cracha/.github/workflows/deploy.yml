@@ -1,0 +1,30 @@
+name: Deploy CrachApp
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Deploy to DigitalOcean
+        env:
+          DEPLOY_KEY: ${{ secrets.DEPLOY_KEY }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$DEPLOY_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H $DEPLOY_HOST >> ~/.ssh/known_hosts 2>/dev/null
+          ssh -i ~/.ssh/deploy_key $DEPLOY_USER@$DEPLOY_HOST '
+            cd /home/deploy/auto_cracha
+            git fetch origin main
+            git reset --hard origin/main
+            cd auto_cracha/frontend-web
+            docker-compose -f ../../docker-compose.yml build --no-cache frontend
+            docker-compose -f ../../docker-compose.yml up -d frontend
+          '
