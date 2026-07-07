@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import ImportarCsvModal from './ImportarCsvModal';
 
 interface Colaborador {
   id: string;
@@ -40,6 +41,7 @@ export default function ColaboradoresPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [showModal, setShowModal] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
   const [filtroStatus, setFiltroStatus] = useState<string>('');
   const [formData, setFormData] = useState({
     nome: '',
@@ -152,11 +154,19 @@ export default function ColaboradoresPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-600 to-blue-600 p-4 pb-24">
       {/* Header Mobile-First */}
-      <div className="flex items-center gap-3 mb-6 mt-4">
-        <Link href="/dashboard" className="text-white hover:opacity-80 text-xl">
-          ←
-        </Link>
-        <h1 className="text-2xl font-bold text-white">Colaboradores</h1>
+      <div className="flex items-center justify-between gap-3 mb-6 mt-4">
+        <div className="flex items-center gap-3">
+          <Link href="/dashboard" className="text-white hover:opacity-80 text-xl">
+            ←
+          </Link>
+          <h1 className="text-2xl font-bold text-white">Colaboradores</h1>
+        </div>
+        <button
+          onClick={() => setShowImportModal(true)}
+          className="bg-white text-purple-600 px-3 py-2 rounded-lg text-sm font-semibold hover:bg-gray-100"
+        >
+          📥 Importar
+        </button>
       </div>
 
       {/* Filtro Status */}
@@ -325,6 +335,17 @@ export default function ColaboradoresPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Modal de Importação CSV */}
+      {showImportModal && (
+        <ImportarCsvModal
+          onClose={() => setShowImportModal(false)}
+          onImportado={() => {
+            setShowImportModal(false);
+            fetchData();
+          }}
+        />
       )}
     </div>
   );
