@@ -3,8 +3,8 @@
 # Executar quando há novo push no GitHub
 
 REPO_PATH="/home/deploy/auto_cracha"
-FRONTEND_PATH="$REPO_PATH/frontend-web"
-BACKEND_PATH="$REPO_PATH/backend"
+FRONTEND_PATH="$REPO_PATH/auto_cracha/frontend-web"
+BACKEND_PATH="$REPO_PATH/auto_cracha/backend"
 
 echo "🚀 Deploy automático iniciado em $(date)"
 
