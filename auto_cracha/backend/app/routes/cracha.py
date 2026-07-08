@@ -7,6 +7,7 @@ from app.core.dependencies import get_current_user, get_tenant_filter, montar_fi
 from app.models.colaborador import Colaborador
 from app.models.usuario import Usuario
 from app.models.config_empresa import ConfigEmpresa
+from app.models.filial import Filial
 from app.cracha.gerador_service import GeradorCracha
 
 
@@ -42,25 +43,35 @@ def preview_cracha(
         config = db.query(ConfigEmpresa).filter(
             ConfigEmpresa.tenant_id == usuario.tenant_id
         ).first()
-        
+
         config_dict = {
             'nome_empresa': config.nome_empresa if config else 'Empresa',
             'logo_url': config.logo_url if config else None,
         }
-        
+
+        # Buscar configuração da filial (logo_filial_url, logo_grupo_url, cor_primaria)
+        filial = db.query(Filial).filter(Filial.id == colaborador.filial_id).first()
+
+        config_filial = {
+            'logo_filial_url': filial.logo_filial_url if filial else None,
+            'logo_grupo_url': filial.logo_grupo_url if filial else None,
+            'cor_primaria': filial.cor_primaria if filial else '#7C3AED',
+        }
+
         # Preparar dados do colaborador
         colaborador_dict = {
             'id': str(colaborador.id),
             'nome': colaborador.nome,
+            'nome_guerra': colaborador.nome_guerra,  # ✅ Nome de guerra
             'cargo': colaborador.cargo,
             'foto_url': colaborador.foto_url,
             'em_treinamento': colaborador.em_treinamento,
             'pcd': colaborador.pcd,
             'qr_token': colaborador.qr_token,
         }
-        
+
         # Gerar crachá
-        cracha_img = GeradorCracha.gerar(colaborador_dict, config_dict, template_id)
+        cracha_img = GeradorCracha.gerar(colaborador_dict, config_dict, config_filial, template_id)
         
         if cracha_img is None:
             raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "Erro ao gerar crachá")

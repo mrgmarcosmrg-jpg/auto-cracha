@@ -14,13 +14,19 @@ class GeradorCracha:
     }
     
     @staticmethod
-    def gerar(colaborador: dict, config_empresa: dict, template_id: str = 'vertical_padrao') -> Optional[Image.Image]:
+    def gerar(
+        colaborador: dict,
+        config_empresa: dict,
+        config_filial: dict,
+        template_id: str = 'vertical_padrao'
+    ) -> Optional[Image.Image]:
         """
-        Gera crachá para um colaborador.
+        Gera crachá para um colaborador com suporte a branding por filial.
         
         Args:
-            colaborador: dict com id, nome, cargo, foto_url, em_treinamento, pcd, qr_token
-            config_empresa: dict com nome_empresa, logo_url, etc
+            colaborador: dict com id, nome, nome_guerra, cargo, foto_url, etc
+            config_empresa: dict com nome_empresa, logo_url
+            config_filial: dict com logo_filial_url, logo_grupo_url, cor_primaria
             template_id: identificador do template
         
         Returns:
@@ -41,7 +47,7 @@ class GeradorCracha:
             
             # Instanciar template e renderizar
             classe_template = GeradorCracha.TEMPLATES[template_id]
-            template = classe_template(config_empresa, colaborador)
+            template = classe_template(config_empresa, config_filial, colaborador)
             cracha = template.renderizar(foto_circular, qr_code)
             
             return cracha

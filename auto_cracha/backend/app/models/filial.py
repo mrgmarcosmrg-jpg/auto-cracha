@@ -20,4 +20,5 @@ class Filial(Base):
     endereco: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     logo_filial_url: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     logo_grupo_url: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    cor_primaria: Mapped[str] = mapped_column(String, default="#7C3AED", nullable=False)
     ativo: Mapped[bool] = mapped_column(Boolean, default=True)

@@ -37,6 +37,7 @@ class Colaborador(Base):
 
     # Dados profissionais (RH preenche)
     nome: Mapped[str] = mapped_column(String, nullable=False)
+    nome_guerra: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     cargo: Mapped[str] = mapped_column(String, nullable=False)
     cpf: Mapped[Optional[str]] = mapped_column(CpfCriptografado, nullable=True)
     cpf_hash: Mapped[Optional[str]] = mapped_column(String, nullable=True, index=True)
